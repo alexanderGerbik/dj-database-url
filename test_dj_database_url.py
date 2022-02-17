@@ -1,6 +1,4 @@
-import os
 import re
-import unittest
 from unittest.mock import patch
 
 import pytest
@@ -164,279 +162,280 @@ def test_provide_settings_to_config__pass_them_to_parse(mocked_parse):
     mocked_parse.assert_called_once_with(URL, **settings)
 
 
-class DatabaseTestSuite(unittest.TestCase):
-    def test_postgres_parsing(self):
-        url = "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
+cases = [
+    # postgres and postgres-like
+    [
+        "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "postgres://%2Fvar%2Frun%2Fpostgresql/d8r82722r2kuvn",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "",
+            "PASSWORD": "",
+            "HOST": "/var/run/postgresql",
+            "PORT": "",
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "postgres://%2FUsers%2Fpostgres%2FRuN/d8r82722r2kuvn",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "",
+            "PASSWORD": "",
+            "HOST": "/Users/postgres/RuN",
+            "PORT": "",
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "postgres://ieRaekei9wilaim7:wegauwhgeuioweg@[2001:db8:1234::1234:5678:90af]:5431/d8r82722r2kuvn",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "ieRaekei9wilaim7",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "2001:db8:1234::1234:5678:90af",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?currentSchema=otherschema",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"options": "-c search_path=otherschema"},
+        },
+    ],
+    [
+        "postgres://%23user:%23password@ec2-107-21-253-135.compute-1.amazonaws.com:5431/%23database",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "#user",
+            "PASSWORD": "#password",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "#database",
+        },
+    ],
+    [
+        "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?sslrootcert=rds-combined-ca-bundle.pem&sslmode=verify-full",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {
+                "sslmode": "verify-full",
+                "sslrootcert": "rds-combined-ca-bundle.pem",
+            },
+        },
+    ],
+    [
+        "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "postgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn",
+        {
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "postgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?currentSchema=otherschema",
+        {
+            "ENGINE": "django.contrib.gis.db.backends.postgis",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"options": "-c search_path=otherschema"},
+        },
+    ],
+    [
+        "redshift://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5439/d8r82722r2kuvn?currentSchema=otherschema",
+        {
+            "ENGINE": "django_redshift_backend",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5439,
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"options": "-c search_path=otherschema"},
+        },
+    ],
+    # mysql
+    [
+        "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true",
+        {
+            "ENGINE": "django.db.backends.mysql",
+            "USER": "bea6eb025ca0d8",
+            "PASSWORD": "69772142",
+            "HOST": "us-cdbr-east.cleardb.com",
+            "PORT": "",
+            "NAME": "heroku_97681db3eff7580",
+            "OPTIONS": {"reconnect": "true"},
+        },
+    ],
+    [
+        "mysql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:3306/d8r82722r2kuvn?",
+        {
+            "ENGINE": "django.db.backends.mysql",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 3306,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "mysql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:3306/d8r82722r2kuvn?ssl-ca=rds-combined-ca-bundle.pem",
+        {
+            "ENGINE": "django.db.backends.mysql",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 3306,
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"ssl": {"ca": "rds-combined-ca-bundle.pem"}},
+        },
+    ],
+    [
+        "mysqlgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn",
+        {
+            "ENGINE": "django.contrib.gis.db.backends.mysql",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
+        "mysql-connector://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn",
+        {
+            "ENGINE": "mysql.connector.django",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    # mssql
+    [
+        "mssql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com/d8r82722r2kuvn?driver=ODBC Driver 13 for SQL Server",
+        {
+            "ENGINE": "sql_server.pyodbc",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": "",
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"driver": "ODBC Driver 13 for SQL Server"},
+        },
+    ],
+    [
+        "mssql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com\\insnsnss:12345/d8r82722r2kuvn?driver=ODBC Driver 13 for SQL Server",
+        {
+            "ENGINE": "sql_server.pyodbc",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com\\insnsnss",
+            "PORT": "12345",
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"driver": "ODBC Driver 13 for SQL Server"},
+        },
+    ],
+    # sqlite
+    [
+        "sqlite://",
+        {
+            "ENGINE": "django.db.backends.sqlite3",
+            "USER": "",
+            "PASSWORD": "",
+            "HOST": "",
+            "PORT": "",
+            "NAME": ":memory:",
+        },
+    ],
+    ["sqlite://:memory:", {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}],
+    # oracle
+    [
+        "oracle://scott:tiger@oraclehost:1521/hr",
+        {
+            "ENGINE": "django.db.backends.oracle",
+            "USER": "scott",
+            "PASSWORD": "tiger",
+            "HOST": "oraclehost",
+            "PORT": "1521",
+            "NAME": "hr",
+        },
+    ],
+    [
+        "oracle://scott:tiger@/tnsname",
+        {
+            "ENGINE": "django.db.backends.oracle",
+            "USER": "scott",
+            "PASSWORD": "tiger",
+            "HOST": "",
+            "PORT": "",
+            "NAME": "tnsname",
+        },
+    ],
+    [
+        "oracle://scott:tiger@/(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=oraclehost)(PORT=1521)))(CONNECT_DATA=(SID=hr)))",
+        {
+            "ENGINE": "django.db.backends.oracle",
+            "USER": "scott",
+            "PASSWORD": "tiger",
+            "HOST": "",
+            "PORT": "",
+            "NAME": "(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)(HOST=oraclehost)(PORT=1521)))(CONNECT_DATA=(SID=hr)))",
+        },
+    ],
+    [
+        "oraclegis://scott:tiger@oraclehost:1521/hr",
+        {
+            "ENGINE": "django.contrib.gis.db.backends.oracle",
+            "USER": "scott",
+            "PASSWORD": "tiger",
+            "HOST": "oraclehost",
+            "PORT": 1521,
+            "NAME": "hr",
+        },
+    ],
+]
 
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
 
-    def test_postgres_unix_socket_parsing(self):
-        url = "postgres://%2Fvar%2Frun%2Fpostgresql/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "/var/run/postgresql"
-        assert url["USER"] == ""
-        assert url["PASSWORD"] == ""
-        assert url["PORT"] == ""
-
-        url = "postgres://%2FUsers%2Fpostgres%2FRuN/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["HOST"] == "/Users/postgres/RuN"
-        assert url["USER"] == ""
-        assert url["PASSWORD"] == ""
-        assert url["PORT"] == ""
-
-    def test_ipv6_parsing(self):
-        url = "postgres://ieRaekei9wilaim7:wegauwhgeuioweg@[2001:db8:1234::1234:5678:90af]:5431/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "2001:db8:1234::1234:5678:90af"
-        assert url["USER"] == "ieRaekei9wilaim7"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-
-    def test_postgres_search_path_parsing(self):
-        url = "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?currentSchema=otherschema"
-        url = dj_database_url.parse(url)
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-        assert url["OPTIONS"]["options"] == "-c search_path=otherschema"
-        assert "currentSchema" not in url["OPTIONS"]
-
-    def test_postgres_parsing_with_special_characters(self):
-        url = "postgres://%23user:%23password@ec2-107-21-253-135.compute-1.amazonaws.com:5431/%23database"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["NAME"] == "#database"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "#user"
-        assert url["PASSWORD"] == "#password"
-        assert url["PORT"] == 5431
-
-    def test_postgis_parsing(self):
-        url = "postgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.contrib.gis.db.backends.postgis"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-
-    def test_postgis_search_path_parsing(self):
-        url = "postgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?currentSchema=otherschema"
-        url = dj_database_url.parse(url)
-        assert url["ENGINE"] == "django.contrib.gis.db.backends.postgis"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-        assert url["OPTIONS"]["options"] == "-c search_path=otherschema"
-        assert "currentSchema" not in url["OPTIONS"]
-
-    def test_mysql_gis_parsing(self):
-        url = "mysqlgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.contrib.gis.db.backends.mysql"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-
-    def test_mysql_connector_parsing(self):
-        url = "mysql-connector://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "mysql.connector.django"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-
-    def test_cleardb_parsing(self):
-        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.db.backends.mysql"
-        assert url["NAME"] == "heroku_97681db3eff7580"
-        assert url["HOST"] == "us-cdbr-east.cleardb.com"
-        assert url["USER"] == "bea6eb025ca0d8"
-        assert url["PASSWORD"] == "69772142"
-        assert url["PORT"] == ""
-
-    def test_empty_sqlite_url(self):
-        url = "sqlite://"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.db.backends.sqlite3"
-        assert url["NAME"] == ":memory:"
-
-    def test_memory_sqlite_url(self):
-        url = "sqlite://:memory:"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.db.backends.sqlite3"
-        assert url["NAME"] == ":memory:"
-
-    def test_database_url_with_options(self):
-        # Test full options
-        os.environ[
-            "DATABASE_URL"
-        ] = "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?sslrootcert=rds-combined-ca-bundle.pem&sslmode=verify-full"
-        url = dj_database_url.config()
-
-        assert url["ENGINE"] == EXPECTED_POSTGRES_ENGINE
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5431
-        assert url["OPTIONS"] == {
-            "sslrootcert": "rds-combined-ca-bundle.pem",
-            "sslmode": "verify-full",
-        }
-
-        # Test empty options
-        os.environ[
-            "DATABASE_URL"
-        ] = "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?"
-        url = dj_database_url.config()
-        assert "OPTIONS" not in url
-
-    def test_mysql_database_url_with_sslca_options(self):
-        os.environ[
-            "DATABASE_URL"
-        ] = "mysql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:3306/d8r82722r2kuvn?ssl-ca=rds-combined-ca-bundle.pem"
-        url = dj_database_url.config()
-
-        assert url["ENGINE"] == "django.db.backends.mysql"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 3306
-        assert url["OPTIONS"] == {"ssl": {"ca": "rds-combined-ca-bundle.pem"}}
-
-        # Test empty options
-        os.environ[
-            "DATABASE_URL"
-        ] = "mysql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:3306/d8r82722r2kuvn?"
-        url = dj_database_url.config()
-        assert "OPTIONS" not in url
-
-    def test_oracle_parsing(self):
-        url = "oracle://scott:tiger@oraclehost:1521/hr"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.db.backends.oracle"
-        assert url["NAME"] == "hr"
-        assert url["HOST"] == "oraclehost"
-        assert url["USER"] == "scott"
-        assert url["PASSWORD"] == "tiger"
-        assert url["PORT"] == "1521"
-
-    def test_oracle_gis_parsing(self):
-        url = "oraclegis://scott:tiger@oraclehost:1521/hr"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.contrib.gis.db.backends.oracle"
-        assert url["NAME"] == "hr"
-        assert url["HOST"] == "oraclehost"
-        assert url["USER"] == "scott"
-        assert url["PASSWORD"] == "tiger"
-        assert url["PORT"] == 1521
-
-    def test_oracle_dsn_parsing(self):
-        url = (
-            "oracle://scott:tiger@/"
-            "(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)"
-            "(HOST=oraclehost)(PORT=1521)))"
-            "(CONNECT_DATA=(SID=hr)))"
-        )
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.db.backends.oracle"
-        assert url["USER"] == "scott"
-        assert url["PASSWORD"] == "tiger"
-        assert url["HOST"] == ""
-        assert url["PORT"] == ""
-
-        dsn = (
-            "(DESCRIPTION=(ADDRESS_LIST=(ADDRESS=(PROTOCOL=TCP)"
-            "(HOST=oraclehost)(PORT=1521)))"
-            "(CONNECT_DATA=(SID=hr)))"
-        )
-
-        assert url["NAME"] == dsn
-
-    def test_oracle_tns_parsing(self):
-        url = "oracle://scott:tiger@/tnsname"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django.db.backends.oracle"
-        assert url["USER"] == "scott"
-        assert url["PASSWORD"] == "tiger"
-        assert url["NAME"] == "tnsname"
-        assert url["HOST"] == ""
-        assert url["PORT"] == ""
-
-    def test_redshift_parsing(self):
-        url = "redshift://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5439/d8r82722r2kuvn?currentSchema=otherschema"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "django_redshift_backend"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == 5439
-        assert url["OPTIONS"]["options"] == "-c search_path=otherschema"
-        assert "currentSchema" not in url["OPTIONS"]
-
-    def test_mssql_parsing(self):
-        url = "mssql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com/d8r82722r2kuvn?driver=ODBC Driver 13 for SQL Server"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "sql_server.pyodbc"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == ""
-        assert url["OPTIONS"]["driver"] == "ODBC Driver 13 for SQL Server"
-        assert "currentSchema" not in url["OPTIONS"]
-
-    def test_mssql_instance_port_parsing(self):
-        url = "mssql://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com\\insnsnss:12345/d8r82722r2kuvn?driver=ODBC Driver 13 for SQL Server"
-        url = dj_database_url.parse(url)
-
-        assert url["ENGINE"] == "sql_server.pyodbc"
-        assert url["NAME"] == "d8r82722r2kuvn"
-        assert url["HOST"] == "ec2-107-21-253-135.compute-1.amazonaws.com\\insnsnss"
-        assert url["USER"] == "uf07k1i6d8ia0v"
-        assert url["PASSWORD"] == "wegauwhgeuioweg"
-        assert url["PORT"] == "12345"
-        assert url["OPTIONS"]["driver"] == "ODBC Driver 13 for SQL Server"
-        assert "currentSchema" not in url["OPTIONS"]
+@pytest.mark.parametrize("url,expected", [pytest.param(u, e, id=u) for u, e in cases])
+def test_successful_parsing(url, expected):
+    assert dj_database_url.parse(url) == expected
