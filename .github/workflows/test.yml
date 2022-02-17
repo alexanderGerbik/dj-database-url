@@ -36,6 +36,6 @@ jobs:
       - name: Install Django
         run: pip install "Django~=${{ matrix.django-version }}.0"
       - name: Install Test dependencies
-        run: pip install pytest~=7.0
+        run: pip install pytest~=7.0 pyyaml~=6.0
       - name: Run Tests
         run: pytest
