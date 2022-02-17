@@ -1,29 +1,119 @@
-# -*- coding: utf-8 -*-
-#!/usr/bin/env python
-
 import os
 import unittest
 
 import dj_database_url
 
-POSTGIS_URL = "postgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
+URL = "postgres://user:password@localhost/db-name"
 EXPECTED_POSTGRES_ENGINE = "django.db.backends.postgresql"
 
 # These were supported out of the box in dj-database-url.
 dj_database_url.register("mysql.connector.django", "mysql-connector")
-dj_database_url.register("sql_server.pyodbc", "mssql", string_ports=True)
-dj_database_url.register(
-    "django_redshift_backend",
-    "redshift",
-    options={
-        "currentSchema": lambda values: {
-            "options": "-c search_path={}".format(values[-1])
-        },
-    },
+dj_database_url.register("sql_server.pyodbc", "mssql")(dj_database_url.stringify_port)
+dj_database_url.register("django_redshift_backend", "redshift")(
+    dj_database_url.apply_current_schema
 )
 
 
+class DeprecatedArgumentsTestSuite(unittest.TestCase):
+    def test_config_conn_max_age_setting(self):
+        conn_max_age = 600
+        os.environ[
+            "DATABASE_URL"
+        ] = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
+        message = (
+            "The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead."
+        )
+        with self.assertWarns(Warning, msg=message):
+            url = dj_database_url.config(conn_max_age=conn_max_age)
+
+        assert url["CONN_MAX_AGE"] == conn_max_age
+        del os.environ["DATABASE_URL"]
+
+    def test_parse_conn_max_age_setting(self):
+        conn_max_age = 600
+        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
+        message = (
+            "The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead."
+        )
+        with self.assertWarns(Warning, msg=message):
+            url = dj_database_url.parse(url, conn_max_age=conn_max_age)
+
+        assert url["CONN_MAX_AGE"] == conn_max_age
+
+    def test_config_engine_setting(self):
+        engine = "django_mysqlpool.backends.mysqlpool"
+        os.environ[
+            "DATABASE_URL"
+        ] = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
+        message = "The `engine` argument is deprecated. Use `ENGINE` instead."
+        with self.assertWarns(Warning, msg=message):
+            url = dj_database_url.config(engine=engine)
+
+        assert url["ENGINE"] == engine
+        del os.environ["DATABASE_URL"]
+
+    def test_parse_engine_setting(self):
+        engine = "django_mysqlpool.backends.mysqlpool"
+        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
+        message = (
+            "Using positional argument `backend`"
+            " to override database backend is deprecated."
+            " Use keyword argument `ENGINE` instead."
+        )
+        with self.assertWarns(Warning, msg=message):
+            url = dj_database_url.parse(url, engine)
+
+        assert url["ENGINE"] == engine
+
+
 class DatabaseTestSuite(unittest.TestCase):
+    def test_credentials_unquoted__raise_value_error(self):
+        expected_message = (
+            "This string is not a valid url, possibly because some of its parts "
+            r"is not properly urllib.parse.quote()'ed."
+        )
+        with self.assertRaises(ValueError, msg=expected_message):
+            dj_database_url.parse("postgres://user:passw#ord!@localhost/foobar")
+
+    def test_credentials_quoted__ok(self):
+        url = "postgres://user%40domain:p%23ssword!@localhost/foobar"
+        config = dj_database_url.parse(url)
+        assert config["USER"] == "user@domain"
+        assert config["PASSWORD"] == "p#ssword!"
+
+    def test_unknown_scheme__raise_value_error(self):
+        expected_message = "Scheme 'unknown-scheme://' is unknown. Did you forget to register custom backend?"
+        with self.assertRaises(ValueError, msg=expected_message):
+            dj_database_url.parse("unknown-scheme://user:password@localhost/foobar")
+
+    def test_provide_test_settings__add_them_to_final_config(self):
+        settings = {
+            "TEST": {
+                "NAME": "mytestdatabase",
+            },
+        }
+        config = dj_database_url.parse(URL, **settings)
+        assert config["TEST"] == {"NAME": "mytestdatabase"}
+
+    def test_provide_options__add_them_to_final_config(self):
+        options = {"options": "-c search_path=other_schema"}
+        config = dj_database_url.parse(URL, OPTIONS=options)
+        assert config["OPTIONS"] == options
+
+    def test_provide_clashing_options__use_options_from_kwargs(self):
+        options = {"reconnect": "false"}
+        config = dj_database_url.parse(f"{URL}?reconnect=true", OPTIONS=options)
+        assert config["OPTIONS"]["reconnect"] == "false"
+
+    def test_provide_custom_engine__use_it_in_final_config(self):
+        engine = "django_mysqlpool.backends.mysqlpool"
+        config = dj_database_url.parse(URL, ENGINE=engine)
+        assert config["ENGINE"] == engine
+
+    def test_provide_conn_max_age__use_it_in_final_config(self):
+        config = dj_database_url.parse(URL, CONN_MAX_AGE=600)
+        assert config["CONN_MAX_AGE"] == 600
+
     def test_postgres_parsing(self):
         url = "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
         url = dj_database_url.parse(url)
@@ -146,7 +236,6 @@ class DatabaseTestSuite(unittest.TestCase):
         assert url["PORT"] == ""
 
     def test_database_url(self):
-        del os.environ["DATABASE_URL"]
         a = dj_database_url.config()
         assert not a
 
@@ -176,38 +265,6 @@ class DatabaseTestSuite(unittest.TestCase):
 
         assert url["ENGINE"] == "django.db.backends.sqlite3"
         assert url["NAME"] == ":memory:"
-
-    def test_parse_engine_setting(self):
-        engine = "django_mysqlpool.backends.mysqlpool"
-        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.parse(url, engine)
-
-        assert url["ENGINE"] == engine
-
-    def test_config_engine_setting(self):
-        engine = "django_mysqlpool.backends.mysqlpool"
-        os.environ[
-            "DATABASE_URL"
-        ] = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.config(engine=engine)
-
-        assert url["ENGINE"] == engine
-
-    def test_parse_conn_max_age_setting(self):
-        conn_max_age = 600
-        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.parse(url, conn_max_age=conn_max_age)
-
-        assert url["CONN_MAX_AGE"] == conn_max_age
-
-    def test_config_conn_max_age_setting(self):
-        conn_max_age = 600
-        os.environ[
-            "DATABASE_URL"
-        ] = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.config(conn_max_age=conn_max_age)
-
-        assert url["CONN_MAX_AGE"] == conn_max_age
 
     def test_database_url_with_options(self):
         # Test full options
