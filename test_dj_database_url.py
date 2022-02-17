@@ -15,6 +15,26 @@ dj_database_url.register("django_redshift_backend", "redshift")(
     dj_database_url.apply_current_schema
 )
 
+dj_database_url.register("django_cockroachdb", "cockroach")
+dj_database_url.register("mssql", "mssqlms")(dj_database_url.stringify_port)
+
+
+@dj_database_url.register("django_snowflake", "snowflake")
+def adjust_snowflake_config(config):
+    config.pop("PORT", None)
+    config["ACCOUNT"] = config.pop("HOST")
+    name, _, schema = config["NAME"].partition("/")
+    if schema:
+        config["SCHEMA"] = schema
+        config["NAME"] = name
+    options = config.get("OPTIONS", {})
+    warehouse = options.pop("warehouse", None)
+    if warehouse:
+        config["WAREHOUSE"] = warehouse
+    role = options.pop("role", None)
+    if role:
+        config["ROLE"] = role
+
 
 class TestDeprecatedArguments:
     @patch.dict("os.environ", DATABASE_URL=URL)
@@ -198,6 +218,17 @@ cases = [
         },
     ],
     [
+        "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@%2Fcloudsql%2Fproject_id%3Aregion%3Ainstance_id/d8r82722r2kuvn",
+        {
+            "ENGINE": EXPECTED_POSTGRES_ENGINE,
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "/cloudsql/project_id:region:instance_id",
+            "PORT": "",
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
         "postgres://ieRaekei9wilaim7:wegauwhgeuioweg@[2001:db8:1234::1234:5678:90af]:5431/d8r82722r2kuvn",
         {
             "ENGINE": EXPECTED_POSTGRES_ENGINE,
@@ -329,6 +360,17 @@ cases = [
         },
     ],
     [
+        "mysql://uf07k1i6d8ia0v@%2fcloudsql%2fec2-107-21-253-135%3acompute-1/d8r82722r2kuvn",
+        {
+            "ENGINE": "django.db.backends.mysql",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "",
+            "HOST": "/cloudsql/ec2-107-21-253-135:compute-1",
+            "PORT": "",
+            "NAME": "d8r82722r2kuvn",
+        },
+    ],
+    [
         "mysqlgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn",
         {
             "ENGINE": "django.contrib.gis.db.backends.mysql",
@@ -375,6 +417,18 @@ cases = [
             "OPTIONS": {"driver": "ODBC Driver 13 for SQL Server"},
         },
     ],
+    [
+        "mssqlms://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:8888/d8r82722r2kuvn?driver=ODBC Driver 13 for SQL Server",
+        {
+            "ENGINE": "mssql",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": "8888",
+            "NAME": "d8r82722r2kuvn",
+            "OPTIONS": {"driver": "ODBC Driver 13 for SQL Server"},
+        },
+    ],
     # sqlite
     [
         "sqlite://",
@@ -385,6 +439,28 @@ cases = [
             "HOST": "",
             "PORT": "",
             "NAME": ":memory:",
+        },
+    ],
+    [
+        "sqlite:///path/to/database.db",
+        {
+            "ENGINE": "django.db.backends.sqlite3",
+            "USER": "",
+            "PASSWORD": "",
+            "HOST": "",
+            "PORT": "",
+            "NAME": "path/to/database.db",
+        },
+    ],
+    [
+        "sqlite:////path/to/database.db",
+        {
+            "ENGINE": "django.db.backends.sqlite3",
+            "USER": "",
+            "PASSWORD": "",
+            "HOST": "",
+            "PORT": "",
+            "NAME": "/path/to/database.db",
         },
     ],
     ["sqlite://:memory:", {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}],
@@ -431,6 +507,37 @@ cases = [
             "HOST": "oraclehost",
             "PORT": 1521,
             "NAME": "hr",
+        },
+    ],
+    # other
+    [
+        "cockroach://testuser:testpass@testhost:26257/cockroach?sslmode=verify-full&sslrootcert=/certs/ca.crt&sslcert=/certs/client.myprojectuser.crt&sslkey=/certs/client.myprojectuser.key",
+        {
+            "ENGINE": "django_cockroachdb",
+            "USER": "testuser",
+            "PASSWORD": "testpass",
+            "HOST": "testhost",
+            "PORT": 26257,
+            "NAME": "cockroach",
+            "OPTIONS": {
+                "sslcert": "/certs/client.myprojectuser.crt",
+                "sslkey": "/certs/client.myprojectuser.key",
+                "sslmode": "verify-full",
+                "sslrootcert": "/certs/ca.crt",
+            },
+        },
+    ],
+    [
+        "snowflake://uf07k1i6d8ia0v:wegauwhgeuioweg@lua32141.us-east-1/DBNAME/RAW?warehouse=WH&role=role",
+        {
+            "ENGINE": "django_snowflake",
+            "USER": "uf07k1i6d8ia0v",
+            "PASSWORD": "wegauwhgeuioweg",
+            "ACCOUNT": "lua32141.us-east-1",
+            "NAME": "DBNAME",
+            "SCHEMA": "RAW",
+            "WAREHOUSE": "WH",
+            "ROLE": "role",
         },
     ],
 ]
