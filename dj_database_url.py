@@ -1,150 +1,181 @@
 import os
 import urllib.parse as urlparse
 
-# Register database schemes in URLs.
-urlparse.uses_netloc.append("postgres")
-urlparse.uses_netloc.append("postgresql")
-urlparse.uses_netloc.append("pgsql")
-urlparse.uses_netloc.append("postgis")
-urlparse.uses_netloc.append("mysql")
-urlparse.uses_netloc.append("mysql2")
-urlparse.uses_netloc.append("mysqlgis")
-urlparse.uses_netloc.append("mysql-connector")
-urlparse.uses_netloc.append("mssql")
-urlparse.uses_netloc.append("mssqlms")
-urlparse.uses_netloc.append("spatialite")
-urlparse.uses_netloc.append("sqlite")
-urlparse.uses_netloc.append("oracle")
-urlparse.uses_netloc.append("oraclegis")
-urlparse.uses_netloc.append("redshift")
-urlparse.uses_netloc.append("cockroach")
-urlparse.uses_netloc.append("timescale")
-urlparse.uses_netloc.append("timescalegis")
 
-DEFAULT_ENV = "DATABASE_URL"
-
-SCHEMES = {
-    "postgres": "django.db.backends.postgresql",
-    "postgresql": "django.db.backends.postgresql",
-    "pgsql": "django.db.backends.postgresql",
-    "postgis": "django.contrib.gis.db.backends.postgis",
-    "mysql": "django.db.backends.mysql",
-    "mysql2": "django.db.backends.mysql",
-    "mysqlgis": "django.contrib.gis.db.backends.mysql",
-    "mysql-connector": "mysql.connector.django",
-    "mssql": "sql_server.pyodbc",
-    "mssqlms": "mssql",
-    "spatialite": "django.contrib.gis.db.backends.spatialite",
-    "sqlite": "django.db.backends.sqlite3",
-    "oracle": "django.db.backends.oracle",
-    "oraclegis": "django.contrib.gis.db.backends.oracle",
-    "redshift": "django_redshift_backend",
-    "cockroach": "django_cockroachdb",
-    "timescale": "timescale.db.backends.postgresql",
-    "timescalegis": "timescale.db.backends.postgis",
-}
+class ParseError(ValueError):
+    def __str__(self):
+        return (
+            "This string is not a valid url, possibly because some of its parts"
+            " is not properly urllib.parse.quote()'ed."
+        )
 
 
-def config(
-    env=DEFAULT_ENV, default=None, engine=None, conn_max_age=0, ssl_require=False
-):
-    """Returns configured DATABASE dictionary from DATABASE_URL."""
+class UnknownSchemeError(ValueError):
+    def __init__(self, scheme):
+        self.scheme = scheme
+
+    def __str__(self):
+        return (
+            f"Scheme '{self.scheme}://' is unknown."
+            " Did you forget to register custom backend?"
+        )
+
+
+ENGINE_SCHEMES = {}
+
+
+def default_postprocess(parsed_config):
+    pass
+
+
+class Engine:
+    def __init__(self, backend, postprocess=default_postprocess):
+        self.backend = backend
+        self.postprocess = postprocess
+
+
+def register(backend, schemes=None):
+    engine = Engine(backend)
+    schemes = schemes or [backend.rsplit(".")[-1]]
+    schemes = [schemes] if isinstance(schemes, str) else schemes
+    for scheme in schemes:
+        if scheme not in ENGINE_SCHEMES:
+            urlparse.uses_netloc.append(scheme)
+        ENGINE_SCHEMES[scheme] = engine
+
+    def inner(func):
+        engine.postprocess = func
+        return func
+
+    return inner
+
+
+register("django.contrib.gis.db.backends.spatialite")
+register("mysql.connector.django", "mysql-connector")
+register("django.contrib.gis.db.backends.mysql", "mysqlgis")
+register("django.contrib.gis.db.backends.oracle", "oraclegis")
+register("django_cockroachdb", "cockroach")
+
+
+@register("django.db.backends.sqlite3", "sqlite")
+def default_to_in_memory_db(parsed_config):
+    # mimic sqlalchemy behaviour
+    if parsed_config["NAME"] == "":
+        parsed_config["NAME"] = ":memory:"
+
+
+@register("django.db.backends.oracle")
+@register("mssql", "mssqlms")
+@register("sql_server.pyodbc", "mssql")
+def stringify_port(parsed_config):
+    parsed_config["PORT"] = str(parsed_config["PORT"])
+
+
+@register("django.db.backends.mysql", ("mysql", "mysql2"))
+def apply_ssl_ca(parsed_config):
+    options = parsed_config["OPTIONS"]
+    ca = options.pop("ssl-ca", None)
+    if ca:
+        options["ssl"] = {"ca": ca}
+
+
+@register("django.db.backends.postgresql", ("postgres", "postgresql", "pgsql"))
+@register("django.contrib.gis.db.backends.postgis")
+@register("django_redshift_backend", "redshift")
+@register("timescale.db.backends.postgresql", "timescale")
+@register("timescale.db.backends.postgis", "timescalegis")
+def apply_current_schema(parsed_config):
+    options = parsed_config["OPTIONS"]
+    schema = options.pop("currentSchema", None)
+    if schema:
+        options["options"] = f"-c search_path={schema}"
+
+
+def config(env="DATABASE_URL", default=None, **settings):
+    """
+    Gets a database URL from environmental variable named as 'env' value and parses it.
+    """
     s = os.environ.get(env, default)
-
-    if s:
-        return parse(s, engine, conn_max_age, ssl_require)
-
-    return {}
+    return parse(s, **settings) if s else {}
 
 
-def parse(url, engine=None, conn_max_age=0, ssl_require=False):
-    """Parses a database URL."""
+def address_deprecated_arguments(backend, settings):
+    import warnings
+
+    if backend is not None:
+        message = (
+            "Using positional argument `backend`"
+            " to override database backend is deprecated."
+            " Use keyword argument `ENGINE` instead."
+        )
+        warnings.warn(message)
+        settings["ENGINE"] = backend
+
+    if "engine" in settings:
+        message = "The `engine` argument is deprecated. Use `ENGINE` instead."
+        warnings.warn(message)
+        settings["ENGINE"] = settings.pop("engine")
+
+    if "conn_max_age" in settings:
+        warnings.warn(
+            "The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead."
+        )
+        settings["CONN_MAX_AGE"] = settings.pop("conn_max_age")
+
+    if "ssl_require" in settings:
+        warnings.warn(
+            "The `ssl_require` argument is deprecated."
+            " Use `OPTIONS={'sslmode': 'require'}` instead."
+        )
+        settings.pop("ssl_require")
+        options = settings.pop("OPTIONS", {})
+        options["sslmode"] = "require"
+        settings["OPTIONS"] = options
+    return backend
+
+
+def parse(url, backend=None, **settings):
+    """Parses a database URL and returns configured DATABASE dictionary."""
+
+    address_deprecated_arguments(backend, settings)
 
     if url == "sqlite://:memory:":
         # this is a special case, because if we pass this URL into
         # urlparse, urlparse will choke trying to interpret "memory"
         # as a port number
-        return {"ENGINE": SCHEMES["sqlite"], "NAME": ":memory:"}
+        return {"ENGINE": ENGINE_SCHEMES["sqlite"].backend, "NAME": ":memory:"}
         # note: no other settings are required for sqlite
 
-    # otherwise parse the url as normal
-    parsed_config = {}
-
-    url = urlparse.urlsplit(url)
-
-    # Split query strings from path.
-    path = url.path[1:]
-    if "?" in path and not url.query:
-        path, query = path.split("?", 2)
-    else:
-        path, query = path, url.query
-    query = urlparse.parse_qs(query)
-
-    # If we are using sqlite and we have no path, then assume we
-    # want an in-memory database (this is the behaviour of sqlalchemy)
-    if url.scheme == "sqlite" and path == "":
-        path = ":memory:"
-
-    # Handle postgres percent-encoded paths.
-    hostname = url.hostname or ""
-    if "%2f" in hostname.lower():
-        # Switch to url.netloc to avoid lower cased paths
-        hostname = url.netloc
-        if "@" in hostname:
-            hostname = hostname.rsplit("@", 1)[1]
-        if ":" in hostname:
-            hostname = hostname.split(":", 1)[0]
-        hostname = hostname.replace("%2f", "/").replace("%2F", "/")
-
-    # Lookup specified engine.
-    engine = SCHEMES[url.scheme] if engine is None else engine
-
-    port = (
-        str(url.port)
-        if url.port
-        and engine in [SCHEMES["oracle"], SCHEMES["mssql"], SCHEMES["mssqlms"]]
-        else url.port
-    )
-
-    # Update with environment configuration.
-    parsed_config.update(
-        {
-            "NAME": urlparse.unquote(path or ""),
+    try:
+        url = urlparse.urlsplit(url)
+        engine = ENGINE_SCHEMES.get(url.scheme)
+        if engine is None:
+            raise UnknownSchemeError(url.scheme)
+        path = url.path[1:]
+        query = urlparse.parse_qs(url.query)
+        options = {k: (v[0] if len(v) == 1 else v) for k, v in query.items()}
+        parsed_config = {
+            "ENGINE": engine.backend,
             "USER": urlparse.unquote(url.username or ""),
             "PASSWORD": urlparse.unquote(url.password or ""),
-            "HOST": hostname,
-            "PORT": port or "",
-            "CONN_MAX_AGE": conn_max_age,
+            "HOST": urlparse.unquote(url.hostname or ""),
+            "PORT": url.port or "",
+            "NAME": urlparse.unquote(path),
+            "OPTIONS": options,
         }
-    )
+    except UnknownSchemeError:
+        raise
+    except ValueError:
+        raise ParseError() from None
 
-    # Pass the query string into OPTIONS.
-    options = {}
-    for key, values in query.items():
-        if url.scheme == "mysql" and key == "ssl-ca":
-            options["ssl"] = {"ca": values[-1]}
-            continue
+    # Guarantee that config has options, possibly empty, when postprocess() is called
+    assert isinstance(parsed_config["OPTIONS"], dict)
+    engine.postprocess(parsed_config)
 
-        options[key] = values[-1]
+    # Update the final config with any settings passed in explicitly.
+    parsed_config["OPTIONS"].update(settings.pop("OPTIONS", {}))
+    parsed_config.update(**settings)
 
-    if ssl_require:
-        options["sslmode"] = "require"
-
-    # Support for Postgres Schema URLs
-    if "currentSchema" in options and engine in (
-        "django.contrib.gis.db.backends.postgis",
-        "django.db.backends.postgresql_psycopg2",
-        "django.db.backends.postgresql",
-        "django_redshift_backend",
-        "timescale.db.backends.postgresql",
-        "timescale.db.backends.postgis",
-    ):
-        options["options"] = "-c search_path={0}".format(options.pop("currentSchema"))
-
-    if options:
-        parsed_config["OPTIONS"] = options
-
-    if engine:
-        parsed_config["ENGINE"] = engine
-
+    if not parsed_config["OPTIONS"]:
+        parsed_config.pop("OPTIONS")
     return parsed_config

@@ -15,19 +15,6 @@ This simple Django utility allows you to utilize the
 `12factor <http://www.12factor.net/backing-services>`_ inspired
 ``DATABASE_URL`` environment variable to configure your Django application.
 
-The ``dj_database_url.config`` method returns a Django database connection
-dictionary, populated with all the data specified in your URL. There is
-also a `conn_max_age` argument to easily enable Django's connection pool.
-
-If you'd rather not use an environment variable, you can pass a URL in directly
-instead to ``dj_database_url.parse``.
-
-Supported Databases
--------------------
-
-Support currently exists for PostgreSQL, PostGIS, MySQL, MySQL (GIS),
-Oracle, Oracle (GIS), Redshift, CockroachDB, Timescale, Timescale (GIS) and SQLite.
-
 Installation
 ------------
 
@@ -38,52 +25,146 @@ Installation is simple::
 Usage
 -----
 
-1. If ``DATABASES`` is already defined:
-
-- Configure your database in ``settings.py`` from ``DATABASE_URL``::
-
-    import dj_database_url
-
-    DATABASES['default'] = dj_database_url.config(conn_max_age=600)
-
-- Provide a default::
-
-    DATABASES['default'] = dj_database_url.config(default='postgres://...')
-
-- Parse an arbitrary Database URL::
-
-    DATABASES['default'] = dj_database_url.parse('postgres://...', conn_max_age=600)
-
-2. If ``DATABASES`` is not defined:
-
-- Configure your database in ``settings.py`` from ``DATABASE_URL``::
+The ``dj_database_url.config()`` method returns a Django database
+connection dictionary, populated with all the data specified in your
+``DATABASE_URL`` environment variable::
 
     import dj_database_url
 
-    DATABASES = {'default': dj_database_url.config(conn_max_age=600)}
+    DATABASES = {
+        "default": dj_database_url.config(),
+        # arbitrary environment variable can be used
+        "replica": dj_database_url.config("REPLICA_URL"),
+    }
 
-- Provide a default::
+Given the following environment variables are defined::
 
-    DATABASES = {'default': dj_database_url.config(default='postgres://...')}
+    $ export DATABASE_URL="postgres://user:password@ec2-107-21-253-135.compute-1.amazonaws.com:5431/db-name"
+    # All the characters which are reserved in URL as per RFC 3986 should be urllib.parse.quote()'ed.
+    $ export REPLICA_URL="postgres://%23user:%23password@replica-host.com/db-name?timeout=20"
 
-- Parse an arbitrary Database URL::
+The above-mentioned code will result in::
 
-    DATABASES = {'default': dj_database_url.parse('postgres://...', conn_max_age=600)}
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "USER": "user",
+            "PASSWORD": "password",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "db-name",
+        },
+        "replica": {
+            "ENGINE": "django.db.backends.postgresql",
+            "USER": "#user",
+            "PASSWORD": "#password",
+            "HOST": "replica-host.com",
+            "PORT": "",
+            "NAME": "db-name",
+            # Any querystring parameters are automatically parsed and added to `OPTIONS`.
+            "OPTIONS": {
+                "timeout": "20",
+            },
+        },
+    }
 
-The ``conn_max_age`` attribute is the lifetime of a database connection in seconds
-and is available in Django 1.6+. If you do not set a value, it will default to ``0``
-which is Django's historical behavior of using a new database connection on each
-request. Use ``None`` for unlimited persistent connections.
+A default value can be provided which will be used when the environment
+variable is not set::
 
-Strings passed to `dj_database_url` must be valid URLs; in
-particular, special characters must be url-encoded. The following url will raise
-a `ValueError`::
+    DATABASES["default"] = dj_database_url.config(default="sqlite://")
 
-    postgres://user:p#ssword!@localhost/foobar
+If you'd rather not use an environment variable, you can pass a URL
+directly into ``dj_database_url.parse()``::
 
-and should instead be passed as::
+    DATABASES["default"] = dj_database_url.parse("postgres://...")
 
-    postgres://user:p%23ssword!@localhost/foobar
+You can also pass in any keyword argument that Django's |databases hyperlink|_ setting accepts,
+such as |max age hyperlink|_ or |options hyperlink|_::
+
+    dj_database_url.config(CONN_MAX_AGE=600, TEST={"NAME": "mytestdatabase"})
+    # results in:
+    {
+        "ENGINE": "django.db.backends.postgresql",
+        # ... other values coming from DATABASE_URL
+        "CONN_MAX_AGE": 600,
+        "TEST": {
+            "NAME": "mytestdatabase",
+        },
+    }
+
+    # such usage is also possible:
+    dj_database_url.parse("postgres://...", **{
+        "CONN_MAX_AGE": 600,
+        "TEST": {
+            "NAME": "mytestdatabase",
+        },
+        "OPTIONS": {
+            "isolation_level": psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE,
+        },
+    })
+
+``OPTIONS`` will be properly merged with the parameters coming from
+querystring (keyword argument has higher priority than querystring).
+
+.. |databases hyperlink| replace:: ``DATABASES``
+.. _databases hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#databases
+.. |max age hyperlink| replace:: ``CONN_MAX_AGE``
+.. _max age hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#conn-max-age
+.. |options hyperlink| replace:: ``OPTIONS``
+.. _options hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-OPTIONS
+
+Supported Databases
+-------------------
+
+Support currently exists for PostgreSQL, PostGIS, MySQL, MySQL (GIS),
+Oracle, Oracle (GIS), Redshift, CockroachDB, Timescale, Timescale (GIS) and SQLite.
+
+If you want to use
+some non-default backends, you need to register them first::
+
+    import dj_database_url
+
+    # registration should be performed only once
+    dj_database_url.register("mysql.connector.django", "mysql-connector")
+
+    assert dj_database_url.parse("mysql-connector://user:password@host:port/db-name") == {
+        "ENGINE": "mysql.connector.django",
+        # ...other connection params
+    }
+
+Some backends need further config adjustments (e.g. oracle and mssql
+expect ``PORT`` to be a string). For such cases you can provide a
+post-processing function to ``register()`` (note that ``register()`` is
+used as a **decorator(!)** in this case)::
+
+    import dj_database_url
+
+    @dj_database_url.register("sql_server.pyodbc", "mssql")
+    def stringify_port(config):
+        config["PORT"] = str(config["PORT"])
+
+    @dj_database_url.register("django_redshift_backend", "redshift")
+    def apply_current_schema(config):
+        options = config["OPTIONS"]
+        schema = options.pop("currentSchema", None)
+        if schema:
+            options["options"] = f"-c search_path={schema}"
+
+    @dj_database_url.register("django_snowflake", "snowflake")
+    def adjust_snowflake_config(config):
+        config.pop("PORT", None)
+        config["ACCOUNT"] = config.pop("HOST")
+        name, _, schema = config["NAME"].partition("/")
+        if schema:
+            config["SCHEMA"] = schema
+            config["NAME"] = name
+        options = config.get("OPTIONS", {})
+        warehouse = options.pop("warehouse", None)
+        if warehouse:
+            config["WAREHOUSE"] = warehouse
+        role = options.pop("role", None)
+        if role:
+            config["ROLE"] = role
 
 URL schema
 ----------
