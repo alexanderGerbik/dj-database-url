@@ -15,13 +15,6 @@ This simple Django utility allows you to utilize the
 `12factor <http://www.12factor.net/backing-services>`_ inspired
 ``DATABASE_URL`` environment variable to configure your Django application.
 
-The ``dj_database_url.config`` method returns a Django database connection
-dictionary, populated with all the data specified in your URL. There is
-also a `conn_max_age` argument to easily enable Django's connection pool.
-
-If you'd rather not use an environment variable, you can pass a URL in directly
-instead to ``dj_database_url.parse``.
-
 Installation
 ------------
 
@@ -34,113 +27,109 @@ Installation is simple:
 Usage
 -----
 
-1. If ``DATABASES`` is already defined:
-
-- Configure your database in ``settings.py`` from ``DATABASE_URL``:
-
-  .. code-block:: python
-
-      import dj_database_url
-
-      DATABASES['default'] = dj_database_url.config(
-          conn_max_age=600,
-          conn_health_checks=True,
-      )
-
-- Provide a default:
+The ``dj_database_url.config()`` method returns a Django database
+connection dictionary, populated with all the data specified in your
+``DATABASE_URL`` environment variable:
 
   .. code-block:: python
 
-      DATABASES['default'] = dj_database_url.config(
-          default='postgres://...',
-          conn_max_age=600,
-          conn_health_checks=True,
-      )
+    import dj_database_url
 
-- Parse an arbitrary Database URL:
+    DATABASES = {
+        "default": dj_database_url.config(),
+        # arbitrary environment variable can be used
+        "replica": dj_database_url.config("REPLICA_URL"),
+    }
 
-  .. code-block:: python
+Given the following environment variables are defined:
 
-      DATABASES['default'] = dj_database_url.parse(
-          'postgres://...',
-          conn_max_age=600,
-          conn_health_checks=True,
-      )
+.. code-block:: console
 
-2. If ``DATABASES`` is not defined:
+    $ export DATABASE_URL="postgres://user:password@ec2-107-21-253-135.compute-1.amazonaws.com:5431/db-name"
+    # All the characters which are reserved in URL as per RFC 3986 should be urllib.parse.quote()'ed.
+    $ export REPLICA_URL="postgres://%23user:%23password@replica-host.com/db-name?timeout=20"
 
-- Configure your database in ``settings.py`` from ``DATABASE_URL``:
+The above-mentioned code will result in:
 
   .. code-block:: python
 
-      import dj_database_url
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "USER": "user",
+            "PASSWORD": "password",
+            "HOST": "ec2-107-21-253-135.compute-1.amazonaws.com",
+            "PORT": 5431,
+            "NAME": "db-name",
+        },
+        "replica": {
+            "ENGINE": "django.db.backends.postgresql",
+            "USER": "#user",
+            "PASSWORD": "#password",
+            "HOST": "replica-host.com",
+            "PORT": "",
+            "NAME": "db-name",
+            # Any querystring parameters are automatically parsed and added to `OPTIONS`.
+            "OPTIONS": {
+                "timeout": "20",
+            },
+        },
+    }
 
-      DATABASES = {
-          'default': dj_database_url.config(
-              conn_max_age=600,
-              conn_health_checks=True,
-          ),
-      }
-
-- You can provide a default, used if the ``DATABASE_URL`` setting is not defined:
+A default value can be provided which will be used when the environment
+variable is not set:
 
   .. code-block:: python
 
-      DATABASES = {
-          'default': dj_database_url.config(
-              default='postgres://...',
-              conn_max_age=600,
-              conn_health_checks=True,
-          )
-      }
+    DATABASES["default"] = dj_database_url.config(default="sqlite://")
 
-- Parse an arbitrary Database URL:
+If you'd rather not use an environment variable, you can pass a URL
+directly into ``dj_database_url.parse()``:
 
   .. code-block:: python
 
-      DATABASES = {
-          'default': dj_database_url.parse(
-              'postgres://...',
-              conn_max_age=600,
-              conn_health_checks=True,
-          )
-      }
+    DATABASES["default"] = dj_database_url.parse("postgres://...")
 
-``conn_max_age`` sets the |CONN_MAX_AGE setting|__, which tells Django to
-persist database connections between requests, up to the given lifetime in
-seconds. If you do not provide a value, it will follow Django’s default of
-``0``. Setting it is recommended for performance.
+You can also pass in any keyword argument that Django's |databases hyperlink|_ setting accepts,
+such as |max age hyperlink|_, |conn health checks hyperlink|_ or |options hyperlink|_:
 
-.. |CONN_MAX_AGE setting| replace:: ``CONN_MAX_AGE`` setting
-__ https://docs.djangoproject.com/en/stable/ref/settings/#conn-max-age
+  .. code-block:: python
 
-``conn_health_checks`` sets the |CONN_HEALTH_CHECKS setting|__ (new in Django
-4.1), which tells Django to check a persisted connection still works at the
-start of each request. If you do not provide a value, it will follow Django’s
-default of ``False``. Enabling it is recommended if you set a non-zero
-``conn_max_age``.
+    dj_database_url.config(CONN_MAX_AGE=600, TEST={"NAME": "mytestdatabase"})
+    # results in:
+    {
+        "ENGINE": "django.db.backends.postgresql",
+        # ... other values coming from DATABASE_URL
+        "CONN_MAX_AGE": 600,
+        "CONN_HEALTH_CHECKS": True,
+        "TEST": {
+            "NAME": "mytestdatabase",
+        },
+    }
 
-.. |CONN_HEALTH_CHECKS setting| replace:: ``CONN_HEALTH_CHECKS`` setting
-__ https://docs.djangoproject.com/en/stable/ref/settings/#conn-health-checks
+    # such usage is also possible:
+    dj_database_url.parse("postgres://...", **{
+        "CONN_MAX_AGE": 600,
+        "CONN_HEALTH_CHECKS": True,
+        "TEST": {
+            "NAME": "mytestdatabase",
+        },
+        "OPTIONS": {
+            "isolation_level": psycopg2.extensions.ISOLATION_LEVEL_SERIALIZABLE,
+        },
+    })
 
-Strings passed to `dj_database_url` must be valid URLs; in
-particular, special characters must be url-encoded. The following url will raise
-a `ValueError`:
+``OPTIONS`` will be properly merged with the parameters coming from
+querystring (keyword argument has higher priority than querystring).
 
-.. code-block:: plaintext
-
-    postgres://user:p#ssword!@localhost/foobar
-
-and should instead be passed as:
-
-.. code-block:: plaintext
-
-    postgres://user:p%23ssword!@localhost/foobar
-
-`TEST <https://docs.djangoproject.com/en/stable/ref/settings/#test>`_ settings can be configured using the ``test_options`` attribute::
-
-    DATABASES['default'] = dj_database_url.config(default='postgres://...', test_options={'NAME': 'mytestdatabase'})
-
+.. |databases hyperlink| replace:: ``DATABASES``
+.. _databases hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#databases
+.. |max age hyperlink| replace:: ``CONN_MAX_AGE``
+.. _max age hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#conn-max-age
+.. |conn health checks hyperlink| replace:: ``CONN_HEALTH_CHECKS``
+.. _conn health checks hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#conn-health-checks
+.. |options hyperlink| replace:: ``OPTIONS``
+.. _options hyperlink: https://docs.djangoproject.com/en/stable/ref/settings/#std:setting-OPTIONS
 
 Supported Databases
 -------------------

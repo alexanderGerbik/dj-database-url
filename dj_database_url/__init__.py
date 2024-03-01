@@ -1,6 +1,7 @@
 import logging
 import os
 import urllib.parse as urlparse
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from typing_extensions import TypedDict
@@ -11,19 +12,12 @@ ENGINE_SCHEMES: Dict[str, "Engine"] = {}
 
 # From https://docs.djangoproject.com/en/stable/ref/settings/#databases
 class DBConfig(TypedDict, total=False):
-    ATOMIC_REQUESTS: bool
-    AUTOCOMMIT: bool
-    CONN_MAX_AGE: Optional[int]
-    CONN_HEALTH_CHECKS: bool
-    DISABLE_SERVER_SIDE_CURSORS: bool
     ENGINE: str
     HOST: str
     NAME: str
     OPTIONS: Dict[str, Any]
     PASSWORD: str
     PORT: Union[str, int]
-    TEST: Dict[str, Any]
-    TIME_ZONE: str
     USER: str
 
 
@@ -129,11 +123,12 @@ def config(
     env: str = DEFAULT_ENV,
     default: Optional[str] = None,
     engine: Optional[str] = None,
-    conn_max_age: int = 0,
-    conn_health_checks: bool = False,
-    disable_server_side_cursors: bool = False,
-    ssl_require: bool = False,
+    conn_max_age: Optional[int] = None,
+    conn_health_checks: Optional[bool] = None,
+    disable_server_side_cursors: Optional[bool] = None,
+    ssl_require: Optional[bool] = None,
     test_options: Optional[Dict] = None,
+    **settings: Any,
 ) -> DBConfig:
     """Returns configured DATABASE dictionary from DATABASE_URL."""
     s = os.environ.get(env, default)
@@ -152,6 +147,7 @@ def config(
             disable_server_side_cursors,
             ssl_require,
             test_options,
+            **settings,
         )
 
     return {}
@@ -160,20 +156,22 @@ def config(
 def parse(
     url: str,
     engine: Optional[str] = None,
-    conn_max_age: int = 0,
-    conn_health_checks: bool = False,
-    disable_server_side_cursors: bool = False,
-    ssl_require: bool = False,
+    conn_max_age: Optional[int] = None,
+    conn_health_checks: Optional[bool] = None,
+    disable_server_side_cursors: Optional[bool] = None,
+    ssl_require: Optional[bool] = None,
     test_options: Optional[dict] = None,
+    **settings: Any,
 ) -> DBConfig:
     """Parses a database URL and returns configured DATABASE dictionary."""
-    settings = _convert_to_settings(
+    _address_deprecated_arguments(
         engine,
         conn_max_age,
         conn_health_checks,
         disable_server_side_cursors,
         ssl_require,
         test_options,
+        settings,
     )
 
     if url == "sqlite://:memory:":
@@ -211,7 +209,7 @@ def parse(
 
     # Update the final config with any settings passed in explicitly.
     parsed_config["OPTIONS"].update(settings.pop("OPTIONS", {}))
-    parsed_config.update(settings)
+    parsed_config.update(settings)  # type: ignore[typeddict-item]
 
     if not parsed_config["OPTIONS"]:
         parsed_config.pop("OPTIONS")
@@ -231,24 +229,44 @@ def _parse_value(value: str) -> OptionType:
     return value
 
 
-def _convert_to_settings(
+def _address_deprecated_arguments(
     engine: Optional[str],
-    conn_max_age: int,
-    conn_health_checks: bool,
-    disable_server_side_cursors: bool,
-    ssl_require: bool,
+    conn_max_age: Optional[int],
+    conn_health_checks: Optional[bool],
+    disable_server_side_cursors: Optional[bool],
+    ssl_require: Optional[bool],
     test_options: Optional[dict],
-) -> DBConfig:
-    settings: DBConfig = {
-        "CONN_MAX_AGE": conn_max_age,
-        "CONN_HEALTH_CHECKS": conn_health_checks,
-        "DISABLE_SERVER_SIDE_CURSORS": disable_server_side_cursors,
-    }
-    if engine:
+    settings: Any,
+) -> None:
+    if engine is not None:
+        _warn("The `engine` argument is deprecated. Use `ENGINE` instead.")
         settings["ENGINE"] = engine
-    if ssl_require:
+    if conn_max_age is not None:
+        _warn("The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead.")
+        settings["CONN_MAX_AGE"] = conn_max_age
+    if conn_health_checks is not None:
+        _warn(
+            "The `conn_health_checks` argument is deprecated."
+            " Use `CONN_HEALTH_CHECKS` instead."
+        )
+        settings["CONN_HEALTH_CHECKS"] = conn_health_checks
+    if disable_server_side_cursors is not None:
+        _warn(
+            "The `disable_server_side_cursors` argument is deprecated."
+            " Use `DISABLE_SERVER_SIDE_CURSORS` instead."
+        )
+        settings["DISABLE_SERVER_SIDE_CURSORS"] = disable_server_side_cursors
+    if ssl_require is not None:
+        _warn(
+            "The `ssl_require` argument is deprecated."
+            " Use `OPTIONS={'sslmode': 'require'}` instead."
+        )
         settings["OPTIONS"] = {}
         settings["OPTIONS"]["sslmode"] = "require"
-    if test_options:
+    if test_options is not None:
+        _warn("The `test_options` argument is deprecated. Use `TEST` instead.")
         settings["TEST"] = test_options
-    return settings
+
+
+def _warn(message: str) -> None:
+    warnings.warn(message, DeprecationWarning, stacklevel=4)

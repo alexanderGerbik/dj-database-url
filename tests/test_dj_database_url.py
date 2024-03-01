@@ -6,7 +6,7 @@ from urllib.parse import uses_netloc
 
 import dj_database_url
 
-POSTGIS_URL = "postgis://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn"
+URL = "postgres://user:password@localhost/db-name"
 
 
 class DatabaseTestSuite(unittest.TestCase):
@@ -146,16 +146,16 @@ class DatabaseTestSuite(unittest.TestCase):
         assert url["PASSWORD"] == "wegauwhgeuioweg"
         assert url["PORT"] == 5431
 
-    def test_config_test_options(self):
-        with mock.patch.dict(
-            os.environ,
-            {
-                "DATABASE_URL": "postgres://uf07k1i6d8ia0v:wegauwhgeuioweg@ec2-107-21-253-135.compute-1.amazonaws.com:5431/d8r82722r2kuvn?"
-            },
-        ):
-            test_db_config = {
-                'NAME': 'mytestdatabase',
-            }
+    @mock.patch.dict(
+        os.environ,
+        {"DATABASE_URL": URL},
+    )
+    def test_config_test_options_deprecated(self):
+        test_db_config = {
+            'NAME': 'mytestdatabase',
+        }
+        message = "The `test_options` argument is deprecated. Use `TEST` instead."
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
             url = dj_database_url.config(test_options=test_db_config)
 
         assert url['TEST']['NAME'] == 'mytestdatabase'
@@ -223,40 +223,50 @@ class DatabaseTestSuite(unittest.TestCase):
         assert config["ENGINE"] == "django.db.backends.sqlite3"
         assert config["NAME"] == "/db.sqlite3"
 
-    def test_parse_engine_setting(self):
+    def test_parse_engine_setting_deprecated(self):
         engine = "django_mysqlpool.backends.mysqlpool"
-        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.parse(url, engine)
+        message = "The `engine` argument is deprecated. Use `ENGINE` instead."
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
+            url = dj_database_url.parse(URL, engine)
 
         assert url["ENGINE"] == engine
 
-    def test_config_engine_setting(self):
+    @mock.patch.dict(
+        os.environ,
+        {"DATABASE_URL": URL},
+    )
+    def test_config_engine_setting_deprecated(self):
         engine = "django_mysqlpool.backends.mysqlpool"
-        with mock.patch.dict(
-            os.environ,
-            {
-                "DATABASE_URL": "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-            },
-        ):
+        message = "The `engine` argument is deprecated. Use `ENGINE` instead."
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
             url = dj_database_url.config(engine=engine)
 
         assert url["ENGINE"] == engine
 
-    def test_parse_conn_max_age_setting(self):
+    def test_parse_conn_max_age_setting_deprecated(self):
         conn_max_age = 600
-        url = "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-        url = dj_database_url.parse(url, conn_max_age=conn_max_age)
+        message = (
+            "The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead."
+        )
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
+            url = dj_database_url.parse(URL, conn_max_age=conn_max_age)
 
         assert url["CONN_MAX_AGE"] == conn_max_age
 
-    def test_config_conn_max_age_setting(self):
+    @mock.patch.dict(
+        os.environ,
+        {"DATABASE_URL": URL},
+    )
+    def test_config_conn_max_age_setting_deprecated(self):
         conn_max_age = 600
-        with mock.patch.dict(
-            os.environ,
-            {
-                "DATABASE_URL": "mysql://bea6eb025ca0d8:69772142@us-cdbr-east.cleardb.com/heroku_97681db3eff7580?reconnect=true"
-            },
-        ):
+        message = (
+            "The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead."
+        )
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
             url = dj_database_url.config(conn_max_age=conn_max_age)
 
         assert url["CONN_MAX_AGE"] == conn_max_age
@@ -571,15 +581,21 @@ class DatabaseTestSuite(unittest.TestCase):
         assert url["PASSWORD"] == "#password"
         assert url["PORT"] == 5431
 
-    def test_persistent_connection_variables(self):
-        url = dj_database_url.parse(
-            "sqlite://myfile.db", conn_max_age=600, conn_health_checks=True
+    def test_persistent_connection_variables_deprecated(self):
+        message = (
+            "The `conn_health_checks` argument is deprecated."
+            " Use `CONN_HEALTH_CHECKS` instead."
         )
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
+            url = dj_database_url.parse(
+                "sqlite://myfile.db", conn_max_age=600, conn_health_checks=True
+            )
 
         assert url["CONN_MAX_AGE"] == 600
         assert url["CONN_HEALTH_CHECKS"] is True
 
-    def test_sqlite_memory_persistent_connection_variables(self):
+    def test_sqlite_memory_persistent_connection_variables_deprecated(self):
         # memory sqlite ignores connection.close(), so persistent connection
         # variables aren’t required
         url = dj_database_url.parse(
@@ -591,10 +607,16 @@ class DatabaseTestSuite(unittest.TestCase):
 
     @mock.patch.dict(
         os.environ,
-        {"DATABASE_URL": "postgres://user:password@instance.amazonaws.com:5431/d8r8?"},
+        {"DATABASE_URL": URL},
     )
-    def test_persistent_connection_variables_config(self):
-        url = dj_database_url.config(conn_max_age=600, conn_health_checks=True)
+    def test_persistent_connection_variables_config_deprecated(self):
+        message = (
+            "The `conn_health_checks` argument is deprecated."
+            " Use `CONN_HEALTH_CHECKS` instead."
+        )
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
+            url = dj_database_url.config(conn_max_age=600, conn_health_checks=True)
 
         assert url["CONN_MAX_AGE"] == 600
         assert url["CONN_HEALTH_CHECKS"] is True
@@ -641,10 +663,17 @@ class DatabaseTestSuite(unittest.TestCase):
 
     @mock.patch.dict(
         os.environ,
-        {"DATABASE_URL": "postgres://user:password@instance.amazonaws.com:5431/d8r8?"},
+        {"DATABASE_URL": URL},
     )
-    def test_ssl_require(self):
-        url = dj_database_url.config(ssl_require=True)
+    def test_ssl_require_deprecated(self):
+        message = (
+            "The `ssl_require` argument is deprecated."
+            " Use `OPTIONS={'sslmode': 'require'}` instead."
+        )
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
+            url = dj_database_url.config(ssl_require=True)
+
         assert url["OPTIONS"] == {'sslmode': 'require'}
 
     def test_options_int_values(self):
@@ -656,12 +685,87 @@ class DatabaseTestSuite(unittest.TestCase):
 
     @mock.patch.dict(
         os.environ,
-        {"DATABASE_URL": "postgres://user:password@instance.amazonaws.com:5431/d8r8?"},
+        {"DATABASE_URL": URL},
     )
-    def test_server_side_cursors__config(self):
-        url = dj_database_url.config(disable_server_side_cursors=True)
+    def test_server_side_cursors__config_deprecated(self):
+        message = (
+            "The `disable_server_side_cursors` argument is deprecated."
+            " Use `DISABLE_SERVER_SIDE_CURSORS` instead."
+        )
+
+        with self.assertWarnsRegex(DeprecationWarning, re.escape(message)):
+            url = dj_database_url.config(disable_server_side_cursors=True)
 
         assert url["DISABLE_SERVER_SIDE_CURSORS"] is True
+
+
+class ArbitraryArgsTestSuite(unittest.TestCase):
+    def test_provide_test_settings__add_them_to_final_config(self):
+        settings = {
+            "TEST": {
+                "NAME": "mytestdatabase",
+            },
+        }
+        config = dj_database_url.parse(URL, **settings)
+        assert config["TEST"] == {"NAME": "mytestdatabase"}
+
+    def test_provide_options__add_them_to_final_config(self):
+        options = {"options": "-c search_path=other_schema"}
+        config = dj_database_url.parse(URL, OPTIONS=options)
+        assert config["OPTIONS"] == options
+
+    def test_provide_sslmode_options__add_them_to_final_config(self):
+        options = {'sslmode': 'require'}
+        config = dj_database_url.parse(URL, OPTIONS=options)
+        assert config["OPTIONS"] == options
+
+    def test_provide_custom_engine__use_it_in_final_config(self):
+        engine = "django_mysqlpool.backends.mysqlpool"
+        config = dj_database_url.parse(URL, ENGINE=engine)
+        assert config["ENGINE"] == engine
+
+    def test_provide_conn_max_age__use_it_in_final_config(self):
+        config = dj_database_url.parse(URL, CONN_MAX_AGE=600)
+        assert config["CONN_MAX_AGE"] == 600
+
+    def test_provide_conn_health_checks__use_it_in_final_config(self):
+        config = dj_database_url.parse(URL, CONN_HEALTH_CHECKS=True)
+        assert config["CONN_HEALTH_CHECKS"] is True
+
+    def test_provide_server_side_cursors__use_it_in_final_config(self):
+        config = dj_database_url.parse(URL, DISABLE_SERVER_SIDE_CURSORS=True)
+        assert config["DISABLE_SERVER_SIDE_CURSORS"] is True
+
+    def test_provide_sqlite_memory_persistent_connection_variables__ignore_them(self):
+        # memory sqlite ignores connection.close(), so persistent connection
+        # variables aren’t required
+        config = dj_database_url.parse(
+            "sqlite://:memory:", conn_max_age=600, conn_health_checks=True
+        )
+
+        assert "CONN_MAX_AGE" not in config
+        assert "CONN_HEALTH_CHECKS" not in config
+
+    def test_provide_clashing_options__use_options_from_kwargs(self):
+        options = {"reconnect": False}
+        config = dj_database_url.parse(f"{URL}?reconnect=true", OPTIONS=options)
+        assert config["OPTIONS"]["reconnect"] is False
+
+    @mock.patch.dict(
+        os.environ,
+        {"DATABASE_URL": URL},
+    )
+    @mock.patch.object(dj_database_url, 'parse', autospec=True)
+    def test_provide_arbitrary_kwargs_to_config__pass_them_to_parse(self, parse_mock):
+        config = dj_database_url.config(ARBITRARY_KWARG_1=600, ARBITRARY_KWARG_2=True)
+
+        parse_mock.assert_called_once()
+        assert parse_mock.call_args_list[0].args[0] == URL
+        assert parse_mock.call_args_list[0].kwargs == {
+            'ARBITRARY_KWARG_1': 600,
+            'ARBITRARY_KWARG_2': True,
+        }
+        assert config is parse_mock.return_value
 
 
 if __name__ == "__main__":
