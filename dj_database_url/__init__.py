@@ -1,7 +1,6 @@
 import logging
 import os
 import urllib.parse as urlparse
-import warnings
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from typing_extensions import TypedDict
@@ -122,12 +121,6 @@ def apply_current_schema(parsed_config: DBConfig) -> None:
 def config(
     env: str = DEFAULT_ENV,
     default: Optional[str] = None,
-    engine: Optional[str] = None,
-    conn_max_age: Optional[int] = None,
-    conn_health_checks: Optional[bool] = None,
-    disable_server_side_cursors: Optional[bool] = None,
-    ssl_require: Optional[bool] = None,
-    test_options: Optional[Dict] = None,
     **settings: Any,
 ) -> DBConfig:
     """Returns configured DATABASE dictionary from DATABASE_URL."""
@@ -141,12 +134,6 @@ def config(
     if s:
         return parse(
             s,
-            engine,
-            conn_max_age,
-            conn_health_checks,
-            disable_server_side_cursors,
-            ssl_require,
-            test_options,
             **settings,
         )
 
@@ -155,25 +142,9 @@ def config(
 
 def parse(
     url: str,
-    engine: Optional[str] = None,
-    conn_max_age: Optional[int] = None,
-    conn_health_checks: Optional[bool] = None,
-    disable_server_side_cursors: Optional[bool] = None,
-    ssl_require: Optional[bool] = None,
-    test_options: Optional[dict] = None,
     **settings: Any,
 ) -> DBConfig:
     """Parses a database URL and returns configured DATABASE dictionary."""
-    _address_deprecated_arguments(
-        engine,
-        conn_max_age,
-        conn_health_checks,
-        disable_server_side_cursors,
-        ssl_require,
-        test_options,
-        settings,
-    )
-
     if url == "sqlite://:memory:":
         # this is a special case, because if we pass this URL into
         # urlparse, urlparse will choke trying to interpret "memory"
@@ -227,46 +198,3 @@ def _parse_value(value: str) -> OptionType:
     if value.lower() in ("true", "false"):
         return value.lower() == "true"
     return value
-
-
-def _address_deprecated_arguments(
-    engine: Optional[str],
-    conn_max_age: Optional[int],
-    conn_health_checks: Optional[bool],
-    disable_server_side_cursors: Optional[bool],
-    ssl_require: Optional[bool],
-    test_options: Optional[dict],
-    settings: Any,
-) -> None:
-    if engine is not None:
-        _warn("The `engine` argument is deprecated. Use `ENGINE` instead.")
-        settings["ENGINE"] = engine
-    if conn_max_age is not None:
-        _warn("The `conn_max_age` argument is deprecated. Use `CONN_MAX_AGE` instead.")
-        settings["CONN_MAX_AGE"] = conn_max_age
-    if conn_health_checks is not None:
-        _warn(
-            "The `conn_health_checks` argument is deprecated."
-            " Use `CONN_HEALTH_CHECKS` instead."
-        )
-        settings["CONN_HEALTH_CHECKS"] = conn_health_checks
-    if disable_server_side_cursors is not None:
-        _warn(
-            "The `disable_server_side_cursors` argument is deprecated."
-            " Use `DISABLE_SERVER_SIDE_CURSORS` instead."
-        )
-        settings["DISABLE_SERVER_SIDE_CURSORS"] = disable_server_side_cursors
-    if ssl_require is not None:
-        _warn(
-            "The `ssl_require` argument is deprecated."
-            " Use `OPTIONS={'sslmode': 'require'}` instead."
-        )
-        settings["OPTIONS"] = {}
-        settings["OPTIONS"]["sslmode"] = "require"
-    if test_options is not None:
-        _warn("The `test_options` argument is deprecated. Use `TEST` instead.")
-        settings["TEST"] = test_options
-
-
-def _warn(message: str) -> None:
-    warnings.warn(message, DeprecationWarning, stacklevel=4)
